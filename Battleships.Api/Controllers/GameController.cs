@@ -16,10 +16,10 @@ namespace Battleships.Api.Controllers
     public class GameController : ApiController
     {
         private static readonly IDictionary<Guid, BattleshipGame> games = new Dictionary<Guid, BattleshipGame>();
-        private static readonly Queue<PlayerData> playerQueue = new Queue<PlayerData>();
+        private static readonly Queue<JoinGameModel> playerQueue = new Queue<JoinGameModel>();
         private static readonly object lockObj = new object();
 
-        [Route("")]
+        [Route("{gameId}")]
         [HttpGet]
         public GameResourceData GetGame(Guid gameId)
         {
@@ -27,71 +27,78 @@ namespace Battleships.Api.Controllers
             {
                 BattleshipGame game = games[gameId];
                 return new GameResourceData()
-                       {
-                           CurrentPlayer = game.CurrentPlayer.Name,
-                           IsRunning = false,
-                           Players = new[]
+                {
+                    CurrentPlayer = game.CurrentPlayer.Name,
+                    IsRunning = false,
+                    Players = new[]
                                      {
-                                         game.Player1.Name,
-                                         game.Player2.Name
+                                         new PlayerData()
+                                         {
+                                             Name = game.Player1.Name,
+                                             Board = game.Player1.PublicBoard
+                                         }, 
+                                         new PlayerData()
+                                         {
+                                             Name = game.Player2.Name,
+                                             Board = game.Player2.PublicBoard
+                                         }, 
                                      }
-                       };
+                };
             }
 
             throw new HttpResponseException(HttpStatusCode.NotFound);
         }
 
-        [Route("{gameId}/players/{enemyName}/board/{x};{y}")]
+        [Route("{gameId}/{enemyName}/board/{x};{y}")]
         [HttpPut]
         public PublicFieldStates BombField(Guid gameId, string enemyName, int x, int y)
         {
             if (games.ContainsKey(gameId))
             {
                 var game = games[gameId];
-                if (game.Player1.Name != enemyName || game.Player2.Name != enemyName)
+                if (game.Player1.Name != enemyName && game.Player2.Name != enemyName)
                 {
                     throw new HttpResponseException(new HttpResponseMessage(HttpStatusCode.NotFound)
-                                                    {
-                                                        Content =
-                                                            new StringContent(
-                                                            string.Format("Game contains no player with name '{0}'",
-                                                                enemyName))
-                                                    });
+                    {
+                        Content =
+                            new StringContent(
+                            string.Format("Game contains no player with name '{0}'",
+                                enemyName))
+                    });
                 }
 
-                var enemy = game.Player1.Name == enemyName ? game.Player1 : game.Player2;
-                if (enemy.Name == enemyName)
+                if (game.CurrentPlayer.Name == enemyName)
                 {
                     throw new HttpResponseException(new HttpResponseMessage(HttpStatusCode.BadRequest)
-                                                    {
-                                                        Content = new StringContent("Not your turn")
-                                                    });
+                    {
+                        Content = new StringContent("Not your turn")
+                    });
                 }
 
                 return game.MakeMove(x, y);
             }
 
             throw new HttpResponseException(new HttpResponseMessage(HttpStatusCode.NotFound)
-                                            {
-                                                Content =
-                                                    new StringContent(string.Format("No game with id '{0}' found",
-                                                        gameId))
-                                            });
+            {
+                Content =
+                    new StringContent(string.Format("No game with id '{0}' found",
+                        gameId))
+            });
         }
 
         [Route("")]
         [HttpPost]
-        public string JoinGame(PlayerData playerData)
+        public GameAccessData JoinGame(JoinGameModel joinGameModel)
         {
-            ShipValidator.ValidateShips(playerData.Ships);
+            ShipValidator.ValidateShips(joinGameModel.Ships);
 
-            if (string.IsNullOrEmpty(playerData.Name))
+            if (string.IsNullOrEmpty(joinGameModel.Name))
             {
                 throw new HttpResponseException(HttpStatusCode.BadRequest);
             }
 
             bool waiting = false;
-            PlayerData enemy = null;
+            JoinGameModel enemy = null;
             lock (lockObj)
             {
                 // check if an enemy is available, otherwise enqueue in waiting list
@@ -101,7 +108,7 @@ namespace Battleships.Api.Controllers
                 }
                 else
                 {
-                    playerQueue.Enqueue(playerData);
+                    playerQueue.Enqueue(joinGameModel);
                     waiting = true;
                 }
             }
@@ -109,22 +116,22 @@ namespace Battleships.Api.Controllers
             if (waiting)
             {
                 // wait to be notified when the player has been added to a game
-                playerData.ResetEvent.WaitOne();
+                joinGameModel.ResetEvent.WaitOne();
                 var game = games
-                    .Where(g => g.Value.Player1.Name == playerData.Name || g.Value.Player2.Name == playerData.Name)
+                    .Where(g => g.Value.Player1.Name == joinGameModel.Name || g.Value.Player2.Name == joinGameModel.Name)
                     .Last();
-                return game.Key.ToString();
+                return new GameAccessData() { GameId = game.Key };
             }
             else
             {
                 // create a new game and notify the other player
                 try
                 {
-                    var game = GameFactory.Create(enemy.Name, enemy.Ships, playerData.Name, playerData.Ships);
+                    var game = GameFactory.Create(enemy.Name, enemy.Ships, joinGameModel.Name, joinGameModel.Ships);
                     var gameId = Guid.NewGuid();
                     games.Add(gameId, game);
                     enemy.ResetEvent.Set();
-                    return gameId.ToString();
+                    return new GameAccessData() { GameId = gameId };
                 }
                 catch (Exception)
                 {
@@ -138,7 +145,7 @@ namespace Battleships.Api.Controllers
         }
     }
 
-    public class PlayerData
+    public class JoinGameModel
     {
         public string Name { get; set; }
         public IEnumerable<IEnumerable<Position>> Ships { get; set; }
@@ -149,8 +156,20 @@ namespace Battleships.Api.Controllers
     {
         public bool IsRunning { get; set; }
         public string CurrentPlayer { get; set; }
-        public IEnumerable<string> Players { get; set; }
+        public IEnumerable<PlayerData> Players { get; set; }
     }
 
-    
+    public class PlayerData
+    {
+        public string Name { get; set; }
+        public PublicFieldStates[,] Board { get; set; }
+    }
+
+    public class GameAccessData
+    {
+        public Guid GameId { get; set; }
+        public Guid Secret { get; set; }
+    }
+
+
 }
