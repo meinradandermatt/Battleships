@@ -5,6 +5,8 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Web.Http;
+using Battleships.Api.Hubs;
+using Microsoft.AspNet.SignalR;
 
 namespace Battleships.Api.Controllers
 {
@@ -18,6 +20,8 @@ namespace Battleships.Api.Controllers
         private static readonly IDictionary<Guid, BattleshipGame> games = new Dictionary<Guid, BattleshipGame>();
         private static readonly Queue<JoinGameModel> playerQueue = new Queue<JoinGameModel>();
         private static readonly object lockObj = new object();
+
+        private static readonly IHubContext gameHubContext = GlobalHost.ConnectionManager.GetHubContext<GameHub>();
 
         [Route("{gameId}")]
         [HttpGet]
@@ -75,7 +79,9 @@ namespace Battleships.Api.Controllers
                     });
                 }
 
-                return game.MakeMove(x, y);
+                var result = game.MakeMove(x, y);
+                gameHubContext.Clients.All.update(gameId);
+                return result;
             }
 
             throw new HttpResponseException(new HttpResponseMessage(HttpStatusCode.NotFound)

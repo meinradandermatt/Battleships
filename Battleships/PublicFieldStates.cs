@@ -2,9 +2,9 @@
 {
     public enum PublicFieldStates
     {
-        Unknown,
-        Empty,
-        Hit,
-        Sunk
+        Unknown = 0,
+        Empty = 1,
+        Hit = 2,
+        Sunk = 3
     }
 }
