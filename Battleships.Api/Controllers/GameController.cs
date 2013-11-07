@@ -11,8 +11,6 @@ using Microsoft.AspNet.SignalR;
 namespace Battleships.Api.Controllers
 {
     //TODO exception when player with same name joins multiple games
-    //TODO ensure only current player can make move
-    //TODO notify users when current user changes
 
     [RoutePrefix("game")]
     public class GameController : ApiController
@@ -60,6 +58,15 @@ namespace Battleships.Api.Controllers
             if (games.ContainsKey(gameId))
             {
                 var game = games[gameId];
+
+                if (game.Finished)
+                {
+                    throw new HttpResponseException(new HttpResponseMessage(HttpStatusCode.BadRequest)
+                                                    {
+                                                        Content = new StringContent("Game has ended.")
+                                                    });
+                }
+
                 if (game.Player1.Name != enemyName && game.Player2.Name != enemyName)
                 {
                     throw new HttpResponseException(new HttpResponseMessage(HttpStatusCode.NotFound)
