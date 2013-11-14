@@ -7,7 +7,13 @@ namespace Battleships.Host
     {
         static void Main(string[] args)
         {
-            string url = "http://localhost:58886";
+            string port = "58886";
+            if (args.Length == 1)
+            {
+                port = args[0];
+            }
+
+            string url = "http://localhost:" + port;
             using (WebApp.Start(url))
             {
                 Console.WriteLine("Server running on {0}", url);
